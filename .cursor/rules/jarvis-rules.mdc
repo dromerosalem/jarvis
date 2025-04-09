@@ -1,0 +1,66 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+
+1. Every Function Must Fit in a Human Brain (≠ 30 lines)
+Keep functions small and focused. A single function should do one thing, and do it clearly. If a function exceeds 30 lines, consider breaking it down.
+
+---
+
+2. No Abbreviations in Names
+Variable, function, and file names should be fully spelled out (e.g. `scrape_google_maps()`, not `scrpGMaps()`). Prioritize clarity over keystrokes.
+
+---
+
+3. Each Script Must Be Readable Top-to-Bottom
+Organize scripts so they read like a story: imports → constants → helpers → main logic → execution. Avoid jumping up and down to understand control flow.
+
+---
+
+## 4. Avoid Cleverness; Be Boring but Clear
+Do not optimize for brilliance. Optimize for another dev (or your future self)** to open the file and say “I get it.”  
+✅ `for lead in leads:`  - GOOD
+❌ `leads.map(lambda x: x.do(thing))` - NOT GOOD
+
+---
+
+5. Declare All External Dependencies at the Top
+All APIs, libraries, keys, or CLI tools must be clearly declared in a `requirements.txt` or `install.sh`, and also mentioned at the top of the script or in a README section.
+
+---
+
+6. Every Component Must Be Usable in Isolation
+Whether it's a scraper, AI prompt, or deployer — it must be callable/testable from a single function or CLI entry point. This makes automation chaining and testing easier.
+
+---
+
+7. Every Output Must Be Structured
+Store outputs (CSV, JSON, logs, site folders) with clear file names and folders using this format:  
+`output/{module_name}/{date}/[project_name].[ext]`  
+Avoid cluttered root folders and hardcoded paths.
+
+---
+
+8. Log Everything that Happens, Once
+Every important action (e.g. scraping started, file saved, API called, deploy completed) must log a message to console or file. Keep logs clean and **one line per event**.
+
+---
+
+9. No "Magic" or Hidden State
+No global flags, hidden environment switches, or silent fallback logic. **All settings must be visible** at the top of the file or in `config.json`.
+
+---
+
+10. Every Module Must Have a Mini-README
+Every folder (scraper, AI gen, deployer, UI) must include a short `README.md` explaining:
+- What it does
+- How to run it
+- What inputs/outputs it expects
+
+---
+
+## 🧪 Bonus Rule Zero: “If it takes more than 10 seconds to figure out, it’s a comment.”
+Every non-trivial line must be self-evident or explained in one line above it.
