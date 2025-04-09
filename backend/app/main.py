@@ -4,13 +4,22 @@ from pydantic import BaseModel
 from typing import List, Optional
 import logging
 from datetime import datetime
+import traceback
+import sys
 
 # Import local modules
 from app.scraper.scraper import GoogleMapsScraper
 from app.database.database import get_db, Lead, create_tables
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging with more detailed configuration
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('debug.log')
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
@@ -120,6 +129,82 @@ async def get_leads(high_priority_only: bool = False, db=Depends(get_db)):
     except Exception as e:
         logger.error(f"Error fetching leads: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/debug/test-scraper")
+async def test_scraper():
+    """
+    Debug endpoint to test the scraper functionality
+    """
+    try:
+        logger.debug("Starting scraper test...")
+        scraper = GoogleMapsScraper()
+        
+        # Test WebDriver setup
+        logger.debug("Testing WebDriver setup...")
+        setup_success = scraper._setup_driver()
+        if not setup_success:
+            return {"status": "error", "message": "WebDriver setup failed"}
+        
+        # Test search
+        logger.debug("Testing search functionality...")
+        test_query = "test business"
+        search_success = scraper._search_query(test_query)
+        
+        # Get page source for debugging
+        page_source = scraper.driver.page_source if scraper.driver else "No driver available"
+        
+        # Capture any errors
+        return {
+            "status": "success" if setup_success and search_success else "error",
+            "setup_success": setup_success,
+            "search_success": search_success,
+            "driver_initialized": scraper.driver is not None,
+            "page_source_length": len(page_source) if isinstance(page_source, str) else 0
+        }
+    except Exception as e:
+        logger.error(f"Error in test-scraper: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+    finally:
+        if scraper and scraper.driver:
+            scraper.driver.quit()
+
+@app.get("/debug/chrome-version")
+async def check_chrome_version():
+    """
+    Debug endpoint to check Chrome and ChromeDriver versions
+    """
+    try:
+        from selenium.webdriver.chrome.service import Service
+        from webdriver_manager.chrome import ChromeDriverManager
+        
+        service = Service(ChromeDriverManager().install())
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        chrome_version = driver.capabilities['browserVersion']
+        chromedriver_version = driver.capabilities['chrome']['chromedriverVersion'].split(' ')[0]
+        
+        driver.quit()
+        
+        return {
+            "status": "success",
+            "chrome_version": chrome_version,
+            "chromedriver_version": chromedriver_version
+        }
+    except Exception as e:
+        logger.error(f"Error checking Chrome version: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 if __name__ == "__main__":
     import uvicorn

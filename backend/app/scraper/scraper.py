@@ -14,7 +14,7 @@ import logging
 import re
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)  # Change to DEBUG level
 logger = logging.getLogger(__name__)
 
 class GoogleMapsScraper:
@@ -35,14 +35,14 @@ class GoogleMapsScraper:
         """
         # Set up Chrome options for headless mode
         self.options = Options()
-        self.options.add_argument("--headless")
+        # self.options.add_argument("--headless")  # Comment out headless mode for debugging
         self.options.add_argument("--no-sandbox")
         self.options.add_argument("--disable-dev-shm-usage")
         self.options.add_argument("--disable-gpu")
         self.options.add_argument("--window-size=1920,1080")
         
         # Add a user agent to avoid detection
-        self.options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36")
+        self.options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36")
         
         # Initialize driver to None (will be set in scrape method)
         self.driver = None
@@ -135,54 +135,64 @@ class GoogleMapsScraper:
     
     def _extract_business_listings(self):
         """
-        Extract business listings from the current page
+        Extract business listings from the loaded Google Maps page
         """
         try:
-            # Get the page source and parse with BeautifulSoup
+            logger.debug("Starting business listings extraction...")
+            
+            # Wait for listings to be present
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div[role='article']"))
+            )
+            
+            # Get the page source and create BeautifulSoup object
             page_source = self.driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
             
             # Find all business listings
-            listings = soup.find_all('div', class_=lambda c: c and 'hfpxzc' in c)
+            listings = soup.find_all("div", {"role": "article"})
+            logger.debug(f"Found {len(listings)} raw business listings in HTML")
             
             business_data = []
-            
-            # If we can't find listings with the expected class, try an alternate approach
-            if not listings:
-                logger.info("Using alternate method to find listings")
-                # Alternative: find the feed container and get all direct children
-                feed = soup.find('div', attrs={'role': 'feed'})
-                if feed:
-                    listings = feed.find_all('div', recursive=False)
-            
-            # Process each listing
             for listing in listings:
-                # Try to click on each listing to view details
                 try:
-                    # Find the listing element in Selenium
-                    listing_element = self.driver.find_element(By.XPATH, f"//a[contains(@href, '/maps/place/')]")
-                    listing_element.click()
+                    # Extract business name
+                    name_element = listing.find("h3", recursive=True)
+                    if not name_element:
+                        logger.debug("Skipping listing - no business name found")
+                        continue
+                    name = name_element.get_text(strip=True)
                     
-                    # Wait for details panel to load
-                    self._random_delay(2, 4)
+                    # Extract address
+                    address_element = listing.find("div", {"role": "link"})
+                    address = address_element.get_text(strip=True) if address_element else "N/A"
                     
-                    # Extract business information
-                    business_info = self._extract_business_info()
-                    if business_info:
-                        business_data.append(business_info)
-                
-                except (NoSuchElementException, TimeoutException):
-                    logger.warning("Could not click on a listing or extract its information")
-                    continue
+                    # Extract rating and reviews
+                    rating_element = listing.find("span", {"role": "img"})
+                    rating = rating_element.get("aria-label", "N/A") if rating_element else "N/A"
+                    
+                    reviews_element = listing.find("div", string=lambda text: text and "reviews" in text.lower())
+                    reviews = reviews_element.get_text(strip=True) if reviews_element else "N/A"
+                    
+                    business_info = {
+                        "name": name,
+                        "address": address,
+                        "rating": rating,
+                        "reviews": reviews
+                    }
+                    
+                    logger.debug(f"Extracted business info: {business_info}")
+                    business_data.append(business_info)
+                    
                 except Exception as e:
-                    logger.error(f"Error processing listing: {str(e)}")
+                    logger.error(f"Error extracting data from listing: {str(e)}")
                     continue
             
-            logger.info(f"Extracted {len(business_data)} business listings")
+            logger.info(f"Successfully extracted {len(business_data)} business listings")
             return business_data
-        
+            
         except Exception as e:
-            logger.error(f"Error extracting business listings: {str(e)}")
+            logger.error(f"Error in _extract_business_listings: {str(e)}", exc_info=True)
             return []
     
     def _extract_business_info(self):
@@ -267,41 +277,47 @@ class GoogleMapsScraper:
     def scrape(self, query, max_results=20):
         """
         Main method to scrape Google Maps for business listings
-        
-        Args:
-            query (str): The search query (e.g., "plumbers in Manchester")
-            max_results (int): Maximum number of results to scrape
-            
-        Returns:
-            list: List of dictionaries containing business information
         """
         try:
+            logger.debug("Starting scraping process...")
+            
             # Set up the WebDriver
             if not self._setup_driver():
+                logger.error("Failed to set up WebDriver")
                 return []
             
             logger.info(f"Starting scrape for query: {query}")
             
             # Search for the query
             if not self._search_query(query):
+                logger.error("Failed to execute search query")
                 return []
             
+            logger.debug("Search query executed successfully")
+            
             # Scroll to load more results
-            self._scroll_results(num_scrolls=3)
+            if not self._scroll_results(num_scrolls=3):
+                logger.error("Failed to scroll results")
+                return []
+            
+            logger.debug("Scrolling completed successfully")
             
             # Extract business listings
             business_data = self._extract_business_listings()
             
+            logger.debug(f"Raw business data extracted: {len(business_data)} listings")
+            
             # Limit results if needed
             if len(business_data) > max_results:
                 business_data = business_data[:max_results]
+                logger.debug(f"Limited results to {max_results} listings")
             
             logger.info(f"Scraping completed, found {len(business_data)} businesses")
             
             return business_data
             
         except Exception as e:
-            logger.error(f"Error in scraping process: {str(e)}")
+            logger.error(f"Error in scraping process: {str(e)}", exc_info=True)
             return []
             
         finally:
