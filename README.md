@@ -128,4 +128,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Built for the Jarvis platform
 - Designed to help digital agencies find clients who need websites
-- Created as a modular component that can be extended with additional features 
+- Created as a modular component that can be extended with additional features
