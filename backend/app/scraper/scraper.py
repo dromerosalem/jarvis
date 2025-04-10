@@ -12,6 +12,10 @@ import time
 import random
 import logging
 import re
+import platform
+import os
+import stat
+import shutil
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)  # Change to DEBUG level
@@ -52,13 +56,25 @@ class GoogleMapsScraper:
         Set up the Chrome WebDriver with configured options
         """
         try:
-            # Use webdriver_manager to handle driver installation
-            service = Service(ChromeDriverManager().install())
+            # Set up ChromeDriver path
+            driver_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chromedriver")
+            driver_path = os.path.join(driver_dir, "chromedriver")
+            
+            if not os.path.exists(driver_path):
+                logger.error(f"ChromeDriver not found at {driver_path}. Please run /debug/chrome-version endpoint first to set it up.")
+                return False
+            
+            # Make sure the driver is executable
+            os.chmod(driver_path, stat.S_IRWXU)
+            
+            # Initialize ChromeDriver with explicit path
+            service = Service(executable_path=driver_path)
             self.driver = webdriver.Chrome(service=service, options=self.options)
+            
             logger.info("WebDriver initialized successfully")
             return True
         except Exception as e:
-            logger.error(f"Error setting up WebDriver: {str(e)}")
+            logger.error(f"Error setting up WebDriver: {str(e)}", exc_info=True)
             return False
     
     def _random_delay(self, min_seconds=3, max_seconds=7):

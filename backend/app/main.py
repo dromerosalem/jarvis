@@ -6,6 +6,15 @@ import logging
 from datetime import datetime
 import traceback
 import sys
+from selenium import webdriver
+import platform
+import subprocess
+import json
+import os
+import shutil
+import requests
+import zipfile
+import stat
 
 # Import local modules
 from app.scraper.scraper import GoogleMapsScraper
@@ -180,22 +189,103 @@ async def check_chrome_version():
     """
     try:
         from selenium.webdriver.chrome.service import Service
-        from webdriver_manager.chrome import ChromeDriverManager
+        from selenium.webdriver.chrome.options import Options
         
-        service = Service(ChromeDriverManager().install())
-        options = webdriver.ChromeOptions()
+        # Get Chrome version first
+        try:
+            chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            chrome_version = subprocess.check_output([chrome_path, "--version"]).decode().strip()
+            logger.info(f"Chrome version: {chrome_version}")
+            # Extract version number (e.g., "134.0.6998.166" from "Google Chrome 134.0.6998.166")
+            version = chrome_version.split()[-1]
+            major_version = version.split('.')[0]
+            logger.info(f"Major version: {major_version}")
+        except Exception as e:
+            logger.error(f"Error getting Chrome version: {e}")
+            version = "134.0.6998.166"  # Use latest version
+            major_version = "134"
+        
+        # Set up Chrome options
+        options = Options()
         options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        
+        # Set up ChromeDriver path
+        driver_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chromedriver")
+        driver_path = os.path.join(driver_dir, "chromedriver")
+        
+        # Create directory if it doesn't exist
+        os.makedirs(driver_dir, exist_ok=True)
+        
+        # Download ChromeDriver if it doesn't exist
+        if not os.path.exists(driver_path):
+            # Use Chrome for Testing download URL for newer versions
+            base_url = "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing"
+            download_url = f"{base_url}/{version}/mac-x64/chromedriver-mac-x64.zip"
+            
+            logger.info(f"Downloading ChromeDriver from: {download_url}")
+            
+            try:
+                # Download the zip file
+                response = requests.get(download_url)
+                if response.status_code != 200:
+                    # Try with stable version URL
+                    stable_url = f"{base_url}/stable/mac-x64/chromedriver-mac-x64.zip"
+                    logger.info(f"Trying stable version from: {stable_url}")
+                    response = requests.get(stable_url)
+                    
+                if response.status_code != 200:
+                    raise Exception(f"Failed to download ChromeDriver. Status code: {response.status_code}")
+                
+                # Save the zip file
+                zip_path = os.path.join(driver_dir, "chromedriver.zip")
+                with open(zip_path, 'wb') as f:
+                    f.write(response.content)
+                
+                # Extract the zip file
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    # Extract to a temporary directory first
+                    temp_dir = os.path.join(driver_dir, "temp")
+                    os.makedirs(temp_dir, exist_ok=True)
+                    zip_ref.extractall(temp_dir)
+                    
+                    # Move the chromedriver to the correct location
+                    extracted_driver = os.path.join(temp_dir, "chromedriver-mac-x64", "chromedriver")
+                    if os.path.exists(extracted_driver):
+                        shutil.copy2(extracted_driver, driver_path)
+                    else:
+                        raise Exception(f"ChromeDriver not found in extracted files at {extracted_driver}")
+                
+                # Make the chromedriver executable
+                os.chmod(driver_path, stat.S_IRWXU)
+                
+                # Clean up
+                os.remove(zip_path)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
+            except Exception as e:
+                logger.error(f"Error downloading/extracting ChromeDriver: {e}")
+                raise
+        
+        logger.info(f"Using ChromeDriver at: {driver_path}")
+        
+        # Initialize ChromeDriver
+        service = Service(executable_path=driver_path)
         driver = webdriver.Chrome(service=service, options=options)
         
-        chrome_version = driver.capabilities['browserVersion']
-        chromedriver_version = driver.capabilities['chrome']['chromedriverVersion'].split(' ')[0]
-        
+        # Get versions
+        capabilities = driver.capabilities
         driver.quit()
         
         return {
             "status": "success",
             "chrome_version": chrome_version,
-            "chromedriver_version": chromedriver_version
+            "driver_path": driver_path,
+            "capabilities": json.dumps(capabilities, indent=2),
+            "processor": platform.processor(),
+            "machine": platform.machine(),
+            "system": platform.system()
         }
     except Exception as e:
         logger.error(f"Error checking Chrome version: {str(e)}")
@@ -203,7 +293,10 @@ async def check_chrome_version():
         return {
             "status": "error",
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
+            "processor": platform.processor(),
+            "machine": platform.machine(),
+            "system": platform.system()
         }
 
 if __name__ == "__main__":
